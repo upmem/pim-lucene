@@ -3514,8 +3514,16 @@ public class IndexWriter
    */
   protected void doBeforeFlush() throws IOException {}
 
+  /**
+   * A function executed before doing the commit
+   * @throws IOException
+   */
   protected void doBeforeCommit() throws IOException {}
 
+  /**
+   * A function executed after doing the commit
+   * @throws IOException
+   */
   protected void doAfterCommit() throws IOException {}
 
   /**
