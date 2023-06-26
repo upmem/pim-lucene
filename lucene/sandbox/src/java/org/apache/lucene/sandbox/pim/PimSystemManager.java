@@ -62,11 +62,7 @@ public final class PimSystemManager {
         isIndexLoaded = false;
         isIndexBeingLoaded = false;
         pimIndexInfo = null;
-        try {
-            queryBuffer = new ByteBufferBoundedQueue(BYTE_BUFFER_QUEUE_LOG2_BYTE_SIZE);
-        } catch (ByteBufferBoundedQueue.BufferLog2SizeTooLargeException e) {
-            throw new RuntimeException(e);
-        }
+        queryBuffer = new ByteBufferBoundedQueue(BYTE_BUFFER_QUEUE_LOG2_BYTE_SIZE);
         queryResultsMap = new TreeMap<>();
         resultReceiver = new ResultReceiver();
         queryRunner = new QueryRunner();
