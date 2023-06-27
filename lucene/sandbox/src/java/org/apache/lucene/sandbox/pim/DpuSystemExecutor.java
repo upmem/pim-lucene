@@ -7,8 +7,9 @@ import org.apache.lucene.util.BitUtil;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.util.List;
 
-class DpuSystemExecutor implements PimSystemManager.PimQueriesExecutor {
+class DpuSystemExecutor implements PimQueriesExecutor {
     private final DpuSystem dpuSystem;
     private final ByteArrayOutputStream dpuStream;
     private final byte[][] dpuQueryResultsAddr;
@@ -108,5 +109,10 @@ class DpuSystemExecutor implements PimSystemManager.PimQueriesExecutor {
             dpuSystem.async().copy(DpuConstants.dpuQueryBatchVarName, queryBatch.getBuffer(), queryBatch.getStartIndex(),
                     queryBatch.getSize(), 0);
         }
+    }
+
+    @Override
+    public void executeQueries(List<PimSystemManager2.QueryBuffer> queryBuffers, PimSystemManager.ResultReceiver resultReceiver) {
+        //TODO
     }
 }
