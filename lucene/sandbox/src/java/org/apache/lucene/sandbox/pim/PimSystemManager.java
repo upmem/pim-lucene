@@ -9,6 +9,9 @@ import org.apache.lucene.store.Directory;
 import java.io.IOException;
 import java.util.List;
 
+/**
+ * Singleton class used to manage the PIM system and offload Lucene queries to it.
+ */
 public interface PimSystemManager {
 
     static PimSystemManager get() {
@@ -49,7 +52,7 @@ public interface PimSystemManager {
     <QueryType extends Query & PimQuery> List<PimMatch> search(LeafReaderContext context,
                                                                QueryType query,
                                                                LeafSimScorer scorer)
-            throws PimQueryQueueFullException, InterruptedException;
+            throws PimQueryQueueFullException, InterruptedException, IOException;
 
     /**
      * Custom Exception to be thrown when the PimSystemManager query queue is full
@@ -61,11 +64,14 @@ public interface PimSystemManager {
         }
     }
 
+    /**
+     * Receives results from the {@link PimQueriesExecutor}.
+     */
     interface ResultReceiver {
 
         void startResultBatch();
 
-        void addResult(Integer resultId, DataInput result);
+        void addResults(int queryId, DataInput results);
 
         void endResultBatch();
     }

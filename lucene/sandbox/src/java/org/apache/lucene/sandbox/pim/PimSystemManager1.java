@@ -24,8 +24,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import com.upmem.dpu.DpuException;
 
 /**
- * PimSystemManager
- * Singleton class used to manage the PIM system and offload Lucene queries to it.
+ * PimSystemManager implementation 1
  * TODO currently this uses a software model to answer queries, not the PIM HW.
  */
 public final class PimSystemManager1 implements PimSystemManager {
@@ -417,6 +416,9 @@ public final class PimSystemManager1 implements PimSystemManager {
                         // found no query, need to wait for one
                         // take the lock, verify that still no query and wait on condition variable
                         queryLock.lock();
+                        if (!running) {
+                            return;
+                        }
                         try {
                             slice = queryBuffer.peekMany(QUERY_BATCH_SIZE);
                             if(slice.getNbElems() == 0) {
@@ -485,8 +487,8 @@ public final class PimSystemManager1 implements PimSystemManager {
             resultsLock.writeLock().lock();
         }
 
-        public void addResult(Integer resultId, DataInput result) {
-            queryResultsMap.put(resultId, result);
+        public void addResults(int queryId, DataInput results) {
+            queryResultsMap.put(queryId, results);
         }
 
         public void endResultBatch() {

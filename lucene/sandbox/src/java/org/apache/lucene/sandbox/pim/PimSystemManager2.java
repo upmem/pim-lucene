@@ -13,12 +13,17 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * PimSystemManager implementation 2
+ * TODO currently this uses a software model to answer queries, not the PIM HW.
+ */
 public class PimSystemManager2 implements PimSystemManager {
 
     private static final boolean USE_SOFTWARE_MODEL = true;
@@ -26,7 +31,14 @@ public class PimSystemManager2 implements PimSystemManager {
     // TODO: Should there be a queue per query type, with a different max number of queries?
     private static final int MAX_NUM_QUERIES = 128;
 
-    private static final ThreadLocal<QueryBuffer> queryBuffers = ThreadLocal.withInitial(QueryBuffer::new);
+    private volatile List<QueryBuffer> queryBuffers = new ArrayList<>();
+    private final ThreadLocal<QueryBuffer> threadQueryBuffer = ThreadLocal.withInitial(() -> {
+        synchronized (PimSystemManager2.this) {
+            QueryBuffer queryBuffer = new QueryBuffer(queryBuffers.size());
+            queryBuffers.add(queryBuffer);
+            return queryBuffer;
+        }
+    });
 
     private final PimQueriesExecutor queriesExecutor;
     private final BlockingQueue<QueryBuffer> queryQueue;
@@ -109,26 +121,22 @@ public class PimSystemManager2 implements PimSystemManager {
     @Override
     public void shutDown() {
         queryRunner.stop();
-        queryLock.lock();
-        try {
-            queryPushedCond.signal();
-        } finally {
-            queryLock.unlock();
-        }
     }
 
     @Override
     public <QueryType extends Query & PimQuery> List<PimMatch> search(LeafReaderContext context,
                                                                       QueryType query,
                                                                       LeafSimScorer scorer)
-            throws PimQueryQueueFullException, InterruptedException {
+            throws PimQueryQueueFullException, InterruptedException, IOException {
         assert isQuerySupported(query);
-        QueryBuffer queryBuffer = queryBuffers.get();
+        QueryBuffer queryBuffer = threadQueryBuffer.get();
         writeQueryToPim(query, context.ord, queryBuffer);
         if (!queryQueue.offer(queryBuffer)) {
-            return null;
+            throw new PimQueryQueueFullException();
+            //TODO: or return null?
         }
-        return queryBuffer.waitForResults();
+        DataInput results = queryBuffer.waitForResults();
+        return getMatches(query, results, scorer);
     }
 
     private <QueryType extends Query & PimQuery> void writeQueryToPim(QueryType query, int leafIdx, QueryBuffer queryBuffer) {
@@ -142,11 +150,33 @@ public class PimSystemManager2 implements PimSystemManager {
         }
     }
 
+    private <QueryType extends Query & PimQuery> List<PimMatch> getMatches(QueryType query,
+                                                                           DataInput input,
+                                                                           LeafSimScorer scorer) throws IOException {
+        List<PimMatch> matches = null;
+        int nbResults = input.readVInt();
+        for (int i = 0; i < nbResults; ++i) {
+            PimMatch m = query.readResult(input, scorer);
+            if (m != null) {
+                if (matches == null) {
+                    matches = new ArrayList<>(nbResults);
+                }
+                matches.add(m);
+            }
+        }
+        return matches == null ? Collections.emptyList() : matches;
+    }
+
     static class QueryBuffer extends DataOutput {
 
-        final BlockingQueue<List<PimMatch>> resultQueue = new LinkedBlockingQueue<>();
+        final int id;
+        final BlockingQueue<DataInput> resultQueue = new LinkedBlockingQueue<>();
         byte[] bytes = new byte[128];
         int length;
+
+        QueryBuffer(int id) {
+            this.id = id;
+        }
 
         void reset() {
             length = 0;
@@ -156,11 +186,13 @@ public class PimSystemManager2 implements PimSystemManager {
             return new ByteArrayDataInput(bytes, 0, length);
         }
 
-        List<PimMatch> waitForResults() throws InterruptedException {
+        DataInput waitForResults() throws InterruptedException {
             return resultQueue.take();
         }
 
-        void add
+        void addResults(DataInput results) {
+            resultQueue.add(results);
+        }
 
         @Override
         public void writeByte(byte b) {
@@ -233,22 +265,21 @@ public class PimSystemManager2 implements PimSystemManager {
         }
 
         private void runInner() throws InterruptedException, IOException {
-            List<QueryBuffer> queryBuffers = new ArrayList<>(MAX_NUM_QUERIES);
+            List<QueryBuffer> batchQueryBuffers = new ArrayList<>(MAX_NUM_QUERIES);
             QueryBuffer pendingQueryBuffer = null;
             while (running) {
-
                 // Drain the QueryBuffers from the queue.
                 // Wait for the first QueryBuffer to be available.
                 QueryBuffer queryBuffer = pendingQueryBuffer == null ?
                         queryQueue.take() : pendingQueryBuffer;
                 assert queryBuffer.length < QUERY_BUFFER_MAX_BYTE_SIZE;
-                queryBuffers.add(queryBuffer);
+                batchQueryBuffers.add(queryBuffer);
                 long bufferSize = queryBuffer.length;
                 long startTimeNs = System.nanoTime();
                 while (bufferSize < QUERY_BUFFER_MAX_BYTE_SIZE) {
                     // Wait some time to give a chance to accumulate more queries and send
                     // a larger batch to DPUs. This is a throughput oriented strategy.
-                    long timeout = WAIT_FOR_BATCH_NS - (System.nanoTime() - startTimeNs);
+                    long timeout = Math.max(WAIT_FOR_BATCH_NS - (System.nanoTime() - startTimeNs), 0L);
                     queryBuffer = queryQueue.poll(timeout, TimeUnit.NANOSECONDS);
                     if (queryBuffer == null) {
                         break;
@@ -257,13 +288,13 @@ public class PimSystemManager2 implements PimSystemManager {
                         pendingQueryBuffer = queryBuffer;
                         break;
                     }
-                    queryBuffers.add(queryBuffer);
+                    batchQueryBuffers.add(queryBuffer);
                     bufferSize += queryBuffer.length;
                 }
                 assert bufferSize <= QUERY_BUFFER_MAX_BYTE_SIZE;
 
                 // Send the query batch to the DPUs, launch, get results.
-                queriesExecutor.executeQueries(queryBuffers, resultReceiver);
+                queriesExecutor.executeQueries(batchQueryBuffers, resultReceiver);
             }
         }
     }
@@ -273,7 +304,8 @@ public class PimSystemManager2 implements PimSystemManager {
         public void startResultBatch() {
         }
 
-        public void addResult(Integer resultId, DataInput result) {
+        public void addResults(int queryId, DataInput results) {
+            queryBuffers.get(queryId).addResults(results);
         }
 
         public void endResultBatch() {

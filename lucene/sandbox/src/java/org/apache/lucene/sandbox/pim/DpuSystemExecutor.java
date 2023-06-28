@@ -10,6 +10,7 @@ import java.io.PrintStream;
 import java.util.List;
 
 class DpuSystemExecutor implements PimQueriesExecutor {
+    private final byte[]
     private final DpuSystem dpuSystem;
     private final ByteArrayOutputStream dpuStream;
     private final byte[][] dpuQueryResultsAddr;
@@ -81,7 +82,7 @@ class DpuSystemExecutor implements PimQueriesExecutor {
         resultReceiver.startResultBatch();
         try {
             for (int q = 0; q < queryBatch.getNbElems(); ++q) {
-                resultReceiver.addResult(queryBatch.getUniqueIdOf(q),
+                resultReceiver.addResults(queryBatch.getUniqueIdOf(q),
                         new DpuResultsInput(dpuResults, dpuQueryResultsAddr, q));
             }
         } finally {
@@ -113,6 +114,14 @@ class DpuSystemExecutor implements PimQueriesExecutor {
 
     @Override
     public void executeQueries(List<PimSystemManager2.QueryBuffer> queryBuffers, PimSystemManager.ResultReceiver resultReceiver) {
-        //TODO
+
+        // 1) send queries to PIM
+        sendQueriesToPIM(queryBuffers);
+
+        //TODO: the rest of the code is identical to the other executeQueries() method.
+    }
+
+    private void sendQueriesToPIM(List<PimSystemManager2.QueryBuffer> queryBuffers) {
+
     }
 }
