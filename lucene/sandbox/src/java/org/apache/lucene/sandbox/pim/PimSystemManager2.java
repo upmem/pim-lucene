@@ -20,6 +20,8 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
+import static org.apache.lucene.sandbox.pim.DpuSystemExecutor.QUERY_BATCH_BUFFER_CAPACITY;
+
 /**
  * PimSystemManager implementation 2
  * TODO currently this uses a software model to answer queries, not the PIM HW.
@@ -244,7 +246,6 @@ public class PimSystemManager2 implements PimSystemManager {
      */
     private class QueryRunner implements Runnable {
 
-        private static final int QUERY_BUFFER_MAX_BYTE_SIZE = 1 << 11;
         private static final long WAIT_FOR_BATCH_NS = 0;
 
         volatile boolean running = true;
@@ -261,10 +262,12 @@ public class PimSystemManager2 implements PimSystemManager {
                 Thread.currentThread().interrupt();
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
+            } catch (DpuException e) {
+                throw new UncheckedDpuException(e);
             }
         }
 
-        private void runInner() throws InterruptedException, IOException {
+        private void runInner() throws InterruptedException, IOException, DpuException {
             List<QueryBuffer> batchQueryBuffers = new ArrayList<>(MAX_NUM_QUERIES);
             QueryBuffer pendingQueryBuffer = null;
             while (running) {
@@ -272,11 +275,11 @@ public class PimSystemManager2 implements PimSystemManager {
                 // Wait for the first QueryBuffer to be available.
                 QueryBuffer queryBuffer = pendingQueryBuffer == null ?
                         queryQueue.take() : pendingQueryBuffer;
-                assert queryBuffer.length < QUERY_BUFFER_MAX_BYTE_SIZE;
+                assert queryBuffer.length < QUERY_BATCH_BUFFER_CAPACITY;
                 batchQueryBuffers.add(queryBuffer);
                 long bufferSize = queryBuffer.length;
                 long startTimeNs = System.nanoTime();
-                while (bufferSize < QUERY_BUFFER_MAX_BYTE_SIZE) {
+                while (bufferSize < QUERY_BATCH_BUFFER_CAPACITY) {
                     // Wait some time to give a chance to accumulate more queries and send
                     // a larger batch to DPUs. This is a throughput oriented strategy.
                     long timeout = Math.max(WAIT_FOR_BATCH_NS - (System.nanoTime() - startTimeNs), 0L);
@@ -284,14 +287,14 @@ public class PimSystemManager2 implements PimSystemManager {
                     if (queryBuffer == null) {
                         break;
                     }
-                    if (bufferSize + queryBuffer.length > QUERY_BUFFER_MAX_BYTE_SIZE) {
+                    if (bufferSize + queryBuffer.length > QUERY_BATCH_BUFFER_CAPACITY) {
                         pendingQueryBuffer = queryBuffer;
                         break;
                     }
                     batchQueryBuffers.add(queryBuffer);
                     bufferSize += queryBuffer.length;
                 }
-                assert bufferSize <= QUERY_BUFFER_MAX_BYTE_SIZE;
+                assert bufferSize <= QUERY_BATCH_BUFFER_CAPACITY;
 
                 // Send the query batch to the DPUs, launch, get results.
                 queriesExecutor.executeQueries(batchQueryBuffers, resultReceiver);

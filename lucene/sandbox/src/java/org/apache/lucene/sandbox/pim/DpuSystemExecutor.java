@@ -7,10 +7,12 @@ import org.apache.lucene.util.BitUtil;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.util.Comparator;
 import java.util.List;
 
 class DpuSystemExecutor implements PimQueriesExecutor {
-    private final byte[]
+    static final int QUERY_BATCH_BUFFER_CAPACITY = 1 << 11;
+    private final byte[] queryBatchBuffer;
     private final DpuSystem dpuSystem;
     private final ByteArrayOutputStream dpuStream;
     private final byte[][] dpuQueryResultsAddr;
@@ -19,6 +21,7 @@ class DpuSystemExecutor implements PimQueriesExecutor {
     private final int[] dpuIdOffset;
 
     DpuSystemExecutor() throws DpuException {
+        queryBatchBuffer = new byte[QUERY_BATCH_BUFFER_CAPACITY];
         // allocate DPUs, load the program, allocate space for DPU results
         dpuStream = new ByteArrayOutputStream();
         dpuSystem = DpuSystem.allocate(DpuConstants.nrDpus, "sgXferEnable=true", new PrintStream(dpuStream));
@@ -113,15 +116,67 @@ class DpuSystemExecutor implements PimQueriesExecutor {
     }
 
     @Override
-    public void executeQueries(List<PimSystemManager2.QueryBuffer> queryBuffers, PimSystemManager.ResultReceiver resultReceiver) {
+    public void executeQueries(List<PimSystemManager2.QueryBuffer> queryBuffers, PimSystemManager.ResultReceiver resultReceiver)
+            throws DpuException {
 
         // 1) send queries to PIM
         sendQueriesToPIM(queryBuffers);
 
-        //TODO: the rest of the code is identical to the other executeQueries() method.
+        // 2) launch DPUs (program should be loaded on PimSystemManager Index load (only once)
+        dpuSystem.async().exec();
+
+        // 3) results transfer from DPUs to CPU
+        // first get the meta-data (index of query results in results array for each DPU)
+        // This meta-data has one integer per query in the batch
+        dpuSystem.async().copy(dpuQueryResultsAddr, DpuConstants.dpuResultsIndexVarName,
+                queryBuffers.size() * Integer.BYTES);
+
+        // then transfer the results
+        // use a callback to transfer a minimal number of results per rank
+        final int batchSize = queryBuffers.size() * Integer.BYTES;
+        dpuSystem.async().call(
+                (DpuSet set, int rankId) -> {
+                    // find the max byte size of results for DPUs in this rank
+                    int resultsSize = 0;
+                    for (int i = 0; i < set.dpus().size(); ++i) {
+                        int dpuResultsSize = (int) BitUtil.VH_LE_INT.get(
+                                dpuQueryResultsAddr[dpuIdOffset[rankId] + i], batchSize);
+                        if (dpuResultsSize > resultsSize)
+                            resultsSize = dpuResultsSize;
+                    }
+                    // perform the transfer for this rank
+                    set.copy(dpuResultsPerRank[rankId], DpuConstants.dpuResultsBatchVarName, resultsSize);
+                }
+        );
+
+        // 4) barrier to wait for all transfers to be finished
+        dpuSystem.async().sync();
+
+        // 5) Update the results map for the client threads to read their results
+        resultReceiver.startResultBatch();
+        try {
+            for (int q = 0, size = queryBuffers.size(); q < size; ++q) {
+                //TODO: can we simply pass the QueryBuffer as parameter of the addResults?
+                resultReceiver.addResults(queryBuffers.get(q).id,
+                        new DpuResultsInput(dpuResults, dpuQueryResultsAddr, q));
+            }
+        } finally {
+            resultReceiver.endResultBatch();
+        }
     }
 
-    private void sendQueriesToPIM(List<PimSystemManager2.QueryBuffer> queryBuffers) {
+    private void sendQueriesToPIM(List<PimSystemManager2.QueryBuffer> queryBuffers) throws DpuException {
+        //TODO: Here we could sort queryBuffers to group the queries by type before
+        // sending them. Just need to make QueryBuffer implement Comparable and compare
+        // on the query type.
+        //queryBuffers.sort(Comparator.naturalOrder());
 
+        //TODO: use Scatter Gather approach to send query buffers separately?
+        int batchLength = 0;
+        for (PimSystemManager2.QueryBuffer queryBuffer : queryBuffers) {
+            System.arraycopy(queryBuffer.bytes, 0, queryBatchBuffer, batchLength, queryBuffer.length);
+            batchLength += queryBuffer.length;
+        }
+        dpuSystem.async().copy(DpuConstants.dpuQueryBatchVarName, queryBatchBuffer, 0, batchLength, 0);
     }
 }

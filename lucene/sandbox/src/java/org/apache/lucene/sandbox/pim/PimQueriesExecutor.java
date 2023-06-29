@@ -13,5 +13,5 @@ interface PimQueriesExecutor {
             throws IOException, DpuException;
 
     void executeQueries(List<PimSystemManager2.QueryBuffer> queryBuffers, PimSystemManager.ResultReceiver resultReceiver)
-            throws IOException;
+            throws IOException, DpuException;
 }
