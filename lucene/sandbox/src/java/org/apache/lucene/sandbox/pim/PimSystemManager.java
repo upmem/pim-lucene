@@ -15,7 +15,7 @@ import java.util.List;
 public interface PimSystemManager {
 
     static PimSystemManager get() {
-        return PimSystemManager1.get();
+        return PimSystemManager2.get();
     }
 
     /**

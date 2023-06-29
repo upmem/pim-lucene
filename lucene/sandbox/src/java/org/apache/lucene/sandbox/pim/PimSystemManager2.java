@@ -28,6 +28,10 @@ import static org.apache.lucene.sandbox.pim.DpuSystemExecutor.QUERY_BATCH_BUFFER
  */
 public class PimSystemManager2 implements PimSystemManager {
 
+    private static class SingletonHolder {
+        static final PimSystemManager2 INSTANCE = new PimSystemManager2();
+    }
+
     private static final boolean USE_SOFTWARE_MODEL = true;
 
     // TODO: Should there be a queue per query type, with a different max number of queries?
@@ -55,6 +59,13 @@ public class PimSystemManager2 implements PimSystemManager {
         Thread t = new Thread(queryRunner, getClass().getSimpleName() + "-" + queryRunner.getClass().getSimpleName());
         t.setDaemon(true);
         t.start();
+    }
+
+    /**
+     * Returns the singleton.
+     */
+    public static PimSystemManager2 get() {
+        return SingletonHolder.INSTANCE;
     }
 
     @Override
@@ -122,7 +133,7 @@ public class PimSystemManager2 implements PimSystemManager {
                                                                       LeafSimScorer scorer)
             throws PimQueryQueueFullException, InterruptedException, IOException {
         assert isQuerySupported(query);
-        QueryBuffer queryBuffer = threadQueryBuffer.get();
+        QueryBuffer queryBuffer = threadQueryBuffer.get().reset();
         writeQueryToPim(query, context.ord, queryBuffer);
         if (!queryQueue.offer(queryBuffer)) {
             throw new PimQueryQueueFullException();
@@ -166,8 +177,9 @@ public class PimSystemManager2 implements PimSystemManager {
         byte[] bytes = new byte[128];
         int length;
 
-        void reset() {
+        QueryBuffer reset() {
             length = 0;
+            return this;
         }
 
         public DataInput getDataInput() {
@@ -234,10 +246,12 @@ public class PimSystemManager2 implements PimSystemManager {
 
         private static final long WAIT_FOR_BATCH_NS = 0;
 
-        volatile boolean running = true;
+        volatile boolean stop;
 
         public void stop() {
-            running = false;
+            stop = true;
+            // Add any QueryBuffer to the queue to make sure it stops waiting if it is empty.
+            queryQueue.offer(threadQueryBuffer.get());
         }
 
         @Override
@@ -256,11 +270,14 @@ public class PimSystemManager2 implements PimSystemManager {
         private void runInner() throws InterruptedException, IOException, DpuException {
             List<QueryBuffer> batchQueryBuffers = new ArrayList<>(MAX_NUM_QUERIES);
             QueryBuffer pendingQueryBuffer = null;
-            while (running) {
+            while (!stop) {
                 // Drain the QueryBuffers from the queue.
                 // Wait for the first QueryBuffer to be available.
                 QueryBuffer queryBuffer = pendingQueryBuffer == null ?
                         queryQueue.take() : pendingQueryBuffer;
+                if (stop) {
+                    break;
+                }
                 assert queryBuffer.length < QUERY_BATCH_BUFFER_CAPACITY;
                 batchQueryBuffers.add(queryBuffer);
                 long bufferSize = queryBuffer.length;
@@ -284,6 +301,7 @@ public class PimSystemManager2 implements PimSystemManager {
 
                 // Send the query batch to the DPUs, launch, get results.
                 queriesExecutor.executeQueries(batchQueryBuffers);
+                batchQueryBuffers.clear();
             }
         }
     }
