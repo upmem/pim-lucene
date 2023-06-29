@@ -33,19 +33,11 @@ public class PimSystemManager2 implements PimSystemManager {
     // TODO: Should there be a queue per query type, with a different max number of queries?
     private static final int MAX_NUM_QUERIES = 128;
 
-    private volatile List<QueryBuffer> queryBuffers = new ArrayList<>();
-    private final ThreadLocal<QueryBuffer> threadQueryBuffer = ThreadLocal.withInitial(() -> {
-        synchronized (PimSystemManager2.this) {
-            QueryBuffer queryBuffer = new QueryBuffer(queryBuffers.size());
-            queryBuffers.add(queryBuffer);
-            return queryBuffer;
-        }
-    });
+    private final ThreadLocal<QueryBuffer> threadQueryBuffer = ThreadLocal.withInitial(QueryBuffer::new);
 
     private final PimQueriesExecutor queriesExecutor;
     private final BlockingQueue<QueryBuffer> queryQueue;
     private final QueryRunner queryRunner;
-    private final ResultReceiver resultReceiver;
     private volatile boolean indexLoaded;
 
     private PimSystemManager2() {
@@ -59,7 +51,6 @@ public class PimSystemManager2 implements PimSystemManager {
             }
         }
         queryQueue = new ArrayBlockingQueue<>(MAX_NUM_QUERIES);
-        resultReceiver = new ResultReceiverImpl();
         queryRunner = new QueryRunner();
         Thread t = new Thread(queryRunner, getClass().getSimpleName() + "-" + queryRunner.getClass().getSimpleName());
         t.setDaemon(true);
@@ -171,14 +162,9 @@ public class PimSystemManager2 implements PimSystemManager {
 
     static class QueryBuffer extends DataOutput {
 
-        final int id;
         final BlockingQueue<DataInput> resultQueue = new LinkedBlockingQueue<>();
         byte[] bytes = new byte[128];
         int length;
-
-        QueryBuffer(int id) {
-            this.id = id;
-        }
 
         void reset() {
             length = 0;
@@ -297,21 +283,8 @@ public class PimSystemManager2 implements PimSystemManager {
                 assert bufferSize <= QUERY_BATCH_BUFFER_CAPACITY;
 
                 // Send the query batch to the DPUs, launch, get results.
-                queriesExecutor.executeQueries(batchQueryBuffers, resultReceiver);
+                queriesExecutor.executeQueries(batchQueryBuffers);
             }
-        }
-    }
-
-    class ResultReceiverImpl implements ResultReceiver {
-
-        public void startResultBatch() {
-        }
-
-        public void addResults(int queryId, DataInput results) {
-            queryBuffers.get(queryId).addResults(results);
-        }
-
-        public void endResultBatch() {
         }
     }
 }

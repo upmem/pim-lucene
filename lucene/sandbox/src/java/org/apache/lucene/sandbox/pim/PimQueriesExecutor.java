@@ -12,6 +12,6 @@ interface PimQueriesExecutor {
     void executeQueries(ByteBufferBoundedQueue.ByteBuffers queryBatch, PimSystemManager.ResultReceiver resultReceiver)
             throws IOException, DpuException;
 
-    void executeQueries(List<PimSystemManager2.QueryBuffer> queryBuffers, PimSystemManager.ResultReceiver resultReceiver)
+    void executeQueries(List<PimSystemManager2.QueryBuffer> queryBuffers)
             throws IOException, DpuException;
 }

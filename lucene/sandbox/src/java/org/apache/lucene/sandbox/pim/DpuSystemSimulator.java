@@ -77,8 +77,7 @@ class DpuSystemSimulator implements PimQueriesExecutor {
     }
 
     @Override
-    public void executeQueries(List<QueryBuffer> queryBuffers, PimSystemManager.ResultReceiver resultReceiver) throws IOException {
-        int resultId = 0;
+    public void executeQueries(List<QueryBuffer> queryBuffers) throws IOException {
         for (QueryBuffer queryBuffer : queryBuffers) {
             DataInput input = queryBuffer.getDataInput();
 
@@ -117,13 +116,7 @@ class DpuSystemSimulator implements PimQueriesExecutor {
                 byteOut.writeVInt((int) m.score);
             }
 
-            resultReceiver.startResultBatch();
-            try {
-                resultReceiver.addResults(resultId, new ByteArrayDataInput(matchesByteArr));
-            } finally {
-                resultReceiver.endResultBatch();
-            }
-            resultId++;
+            queryBuffer.addResults(new ByteArrayDataInput(matchesByteArr));
         }
     }
 }

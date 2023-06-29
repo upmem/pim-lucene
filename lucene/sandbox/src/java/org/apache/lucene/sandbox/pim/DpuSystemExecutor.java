@@ -116,7 +116,7 @@ class DpuSystemExecutor implements PimQueriesExecutor {
     }
 
     @Override
-    public void executeQueries(List<PimSystemManager2.QueryBuffer> queryBuffers, PimSystemManager.ResultReceiver resultReceiver)
+    public void executeQueries(List<PimSystemManager2.QueryBuffer> queryBuffers)
             throws DpuException {
 
         // 1) send queries to PIM
@@ -153,15 +153,8 @@ class DpuSystemExecutor implements PimQueriesExecutor {
         dpuSystem.async().sync();
 
         // 5) Update the results map for the client threads to read their results
-        resultReceiver.startResultBatch();
-        try {
-            for (int q = 0, size = queryBuffers.size(); q < size; ++q) {
-                //TODO: can we simply pass the QueryBuffer as parameter of the addResults?
-                resultReceiver.addResults(queryBuffers.get(q).id,
-                        new DpuResultsInput(dpuResults, dpuQueryResultsAddr, q));
-            }
-        } finally {
-            resultReceiver.endResultBatch();
+        for (int q = 0, size = queryBuffers.size(); q < size; ++q) {
+            queryBuffers.get(q).addResults(new DpuResultsInput(dpuResults, dpuQueryResultsAddr, q));
         }
     }
 
