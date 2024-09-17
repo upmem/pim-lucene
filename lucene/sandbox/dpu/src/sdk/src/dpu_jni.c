@@ -194,7 +194,7 @@ Java_org_apache_lucene_sandbox_sdk_NativeDpuSet_descriptionFor(JNIEnv *env, __at
     const char *c_profile = (*env)->GetStringUTFChars(env, profile, 0);
     dpu_description_t description;
 
-    THROW_ON_ERROR_L(dpu_get_profile_description(c_profile, &description), error);
+    THROW_ON_ERROR_L(dpu_get_profile_description(c_profile, &description, (dpu_rank_id_t) 0), error);
 
     (*env)->ReleaseStringUTFChars(env, profile, c_profile);
 
