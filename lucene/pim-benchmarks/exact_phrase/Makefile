@@ -1,4 +1,4 @@
-INDEX_DIRECTORY:=/scratch/nney/lucene_data
+INDEX_DIRECTORY:=/scratch/jlegriel/lucene_data
 DATASET_PATH:=./datasets/wiki_subset
 #DATASET_PATH:=/home/shared/index_search/wikipedia/files
 #OUTPUT_PREFIX:=full_wiki
@@ -9,7 +9,7 @@ QUERIES:=./queries/requests.txt
 NB_DPUS=2048
 NB_THREADS ?= 64
 NB_TOPDOCS ?= 100
-PIM_LUCENE_DIR=/home/upmemstaff/nney/lucene/pim-lucene
+PIM_LUCENE_DIR=/home/upmemstaff/jlegriel/lucene/pim-lucene
 JNI_LIB=${PIM_LUCENE_DIR}/lucene/sandbox/dpu/build
 PROFILING_OPTIONS=-XX:+FlightRecorder -XX:StartFlightRecording=duration=200s,filename=flight.jfr
 OUTPUT_DIR ?= outputs
