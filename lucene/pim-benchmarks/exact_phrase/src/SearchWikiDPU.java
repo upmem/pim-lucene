@@ -97,8 +97,10 @@ public class SearchWikiDPU {
     IndexReader reader = DirectoryReader.open(MMapDirectory.open(Paths.get(index)));
     IndexSearcher searcher = new IndexSearcher(reader);
 
+    int nbDpus = Integer.parseInt(System.getProperty("nb_dpus", "2048"));
+
     // load PIM index from PIM directory
-    PimSystemManager.setNumAllocDpus(1024);
+    PimSystemManager.setNumAllocDpus(nbDpus);
     if(PimSystemManager.get().loadPimIndex(MMapDirectory.open(Paths.get(index + "/dpu"))))
       System.out.println("Loaded PIM index with " + PimSystemManager.get().getNbDpus() + " DPUs");
     else

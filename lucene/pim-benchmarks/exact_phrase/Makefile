@@ -6,7 +6,7 @@ DATASET_PATH:=./datasets/wiki_subset
 OUTPUT_PREFIX:=subset
 QUERIES:=./queries/requests.txt
 #QUERIES:=./queries/requests_one_phrase.txt
-NB_DPUS=1024
+NB_DPUS=2048
 NB_THREADS ?= 64
 NB_TOPDOCS ?= 100
 PIM_LUCENE_DIR=/home/upmemstaff/nney/lucene/pim-lucene
@@ -59,7 +59,7 @@ run_fuzzy_parallel:
 	source shell/setclasspath.sh && javac src/SearchWikiFuzzyMultiThread.java && java ${PROFILING_OPTIONS} SearchWikiFuzzyMultiThread -index "${INDEX_DIRECTORY}/index_${OUTPUT_PREFIX}" -queries ${QUERIES} |&tee ${OUTPUT_DIR}/out_fuzzy_parallel_${OUTPUT_FILE_PREFIX}
 
 run_dpu:
-	source shell/setclasspathDPU.sh && javac src/SearchWikiDPU.java && java ${PROFILING_OPTIONS} -Djava.library.path=${JNI_LIB} -Dlucene.pim.dir=${PIM_LUCENE_DIR} SearchWikiDPU -index "${INDEX_DIRECTORY}/index_dpu_${OUTPUT_PREFIX}" -queries ${QUERIES} |&tee ${OUTPUT_DIR}/out_dpu_${OUTPUT_FILE_PREFIX}
+	source shell/setclasspathDPU.sh && javac src/SearchWikiDPU.java && java ${PROFILING_OPTIONS} -Djava.library.path=${JNI_LIB} -Dlucene.pim.dir=${PIM_LUCENE_DIR} -Dnb_dpus=${NB_DPUS} SearchWikiDPU -index "${INDEX_DIRECTORY}/index_dpu_${OUTPUT_PREFIX}" -queries ${QUERIES} |&tee ${OUTPUT_DIR}/out_dpu_${OUTPUT_FILE_PREFIX}
 
 run_dpu_parallel:
 	source shell/setclasspathDPU.sh && javac src/SearchWikiDPUMultiThread.java && java ${PROFILING_OPTIONS} -Djava.library.path=${JNI_LIB} -Dlucene.pim.dir=${PIM_LUCENE_DIR} SearchWikiDPUMultiThread -index "${INDEX_DIRECTORY}/index_dpu_${OUTPUT_PREFIX}" -queries ${QUERIES} -nthreads ${NB_THREADS} -ntopdocs ${NB_TOPDOCS} |&tee ${OUTPUT_DIR}/out_dpu_parallel_${OUTPUT_FILE_PREFIX}
